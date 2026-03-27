@@ -136,20 +136,37 @@ def scrape_bld(cas: str) -> dict:
        city-level stock (Hyderabad / Delhi / Germany).
     3. Fall back to API price data if the HTML page yields no table.
     """
-    params_b64 = base64.b64encode(
-        json.dumps({"keyword": cas, "pageindex": 1, "country": ""}).encode()
-    ).decode()
+    session = get_bld_session()
+    xsrf = session.cookies.get("_xsrf", "")
 
-    try:
-        r = get_bld_session().get(
-            f"{_BLD_API}?params={params_b64}&_xsrf=", timeout=20
-        )
-        r.raise_for_status()
-        api_data = r.json()
-    except Exception as e:
-        return {"error": str(e)}
+    # Try both country="" (global) and country="India" — some products
+    # only appear in one or the other.
+    results = []
+    for country in ("", "India"):
+        params_b64 = base64.b64encode(
+            json.dumps({"keyword": cas, "pageindex": 1, "country": country}).encode()
+        ).decode()
+        try:
+            r = session.get(
+                f"{_BLD_API}?params={params_b64}&_xsrf={xsrf}", timeout=20
+            )
+            r.raise_for_status()
+            api_data = r.json()
+        except Exception as e:
+            return {"error": str(e)}
 
-    results = api_data.get("value", {}).get("result", [])
+        for item in api_data.get("value", {}).get("result", []):
+            bd = item.get("p_bd", "")
+            # deduplicate by BD number (or by s_url for BD-less entries)
+            if not any(
+                (bd and bd == e.get("p_bd")) or
+                (not bd and item.get("s_url") == e.get("s_url"))
+                for e in results
+            ):
+                results.append(item)
+        if results:
+            break                            # good enough — skip next country
+
     if not results:
         return {"found": False, "message": f"CAS **{cas}** not found on BLD Pharm."}
 
@@ -174,6 +191,19 @@ def scrape_bld(cas: str) -> dict:
         # Fallback: build table from API price_list (no city breakdown)
         price_list = product.get("price_list", [])
         if not price_list:
+            # If the API returned only s_url (no pricing), the product exists
+            # but we couldn't scrape data. Show a "link-only" entry so the
+            # user can verify on BLD directly.
+            entries.append({
+                "found": True, "url": url,
+                "cas": cas,
+                "name": product.get("p_name", product.get("p_name_cn", "—")),
+                "catalog_no": bd or "—", "purity": "—",
+                "lead_time": None,
+                "rows": [{"Size": "—", "Price (INR)": "Visit BLD →",
+                          "Hyderabad": "—", "Delhi": "—", "Germany": "—"}],
+                "_link_only": True,
+            })
             continue
 
         rows = []
