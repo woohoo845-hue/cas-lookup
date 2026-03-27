@@ -11,17 +11,50 @@ st.title("🧪 CAS Number Price Lookup")
 st.caption("Live pricing & availability from **BLD Pharm** and **Hyma Synthesis**")
 
 
+_BLD_BASE  = "https://www.bldpharm.com"
+_HYMA_BASE = "https://hymasynthesis.com"
+
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
 @st.cache_resource
-def get_session():
+def get_bld_session():
+    """
+    A requests Session pre-initialised the way a real browser would visit BLD Pharm:
+    homepage → _xsrf cookie → privacy acknowledgement.
+    Without this, BLD's server omits the stock table from the HTML response.
+    """
     s = requests.Session()
-    s.headers.update({
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-    })
+    s.headers.update(_BROWSER_HEADERS)
+    try:
+        s.get(f"{_BLD_BASE}/", timeout=15)                               # get _xsrf cookie
+        xsrf = s.cookies.get("_xsrf", "")
+        s.get(                                                            # accept privacy
+            f"{_BLD_BASE}/webapi/v1/setcookiebyprivacy?params=e30%3D&_xsrf={xsrf}",
+            timeout=10,
+        )
+    except Exception:
+        pass
     return s
+
+
+@st.cache_resource
+def get_hyma_session():
+    s = requests.Session()
+    s.headers.update(_BROWSER_HEADERS)
+    return s
+
+
+# keep a thin alias so non-BLD code still compiles if anything references it
+def get_session():
+    return get_bld_session()
 
 
 # ── BLD Pharm ──────────────────────────────────────────────
@@ -40,7 +73,7 @@ def _stock_icon(val: str) -> str:
 def _scrape_bld_product(cas: str, url: str) -> dict:
     """Scrape a single BLD Pharm product page (may include ?BD= param)."""
     try:
-        resp = get_session().get(url, timeout=20)
+        resp = get_bld_session().get(url, timeout=20)
     except Exception as e:
         return {"error": str(e)}
 
@@ -108,7 +141,7 @@ def scrape_bld(cas: str) -> dict:
     ).decode()
 
     try:
-        r = get_session().get(
+        r = get_bld_session().get(
             f"{_BLD_API}?params={params_b64}&_xsrf=", timeout=20
         )
         r.raise_for_status()
@@ -172,8 +205,8 @@ def scrape_bld(cas: str) -> dict:
 
 def scrape_hyma(cas: str) -> dict:
     try:
-        r1 = get_session().get(
-            "https://hymasynthesis.com/webservices/api/Values/GetChemicalNames",
+        r1 = get_hyma_session().get(
+            f"{_HYMA_BASE}/webservices/api/Values/GetChemicalNames",
             params={"Query": cas}, timeout=15,
         )
         r1.raise_for_status()
@@ -193,8 +226,8 @@ def scrape_hyma(cas: str) -> dict:
         group      = parts[3] if len(parts) > 3 else ""
 
         try:
-            r2 = get_session().get(
-                "https://hymasynthesis.com/webservices//api/Values/GetWebStockItemMstBasedOnId",
+            r2 = get_hyma_session().get(
+                f"{_HYMA_BASE}/webservices/api/Values/GetWebStockItemMstBasedOnId",
                 params={"ItemCode": catalog_no}, timeout=15,
             )
             r2.raise_for_status()
@@ -322,9 +355,12 @@ if search and cas_input.strip():
                     for r in cat_rows
                 ]
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
+                # Hyma's Angular SPA ignores URL query params — link to
+                # the Products page; the catalog number is shown in the label
+                # so the user can type it into the search box themselves.
                 st.link_button(
-                    f"🔗 Search {cat} on Hyma →",
-                    f"https://hymasynthesis.com/Products?Value={cat}",
+                    f"🔗 Open Hyma Products (search: {cat}) →",
+                    f"{_HYMA_BASE}/Products",
                 )
 
 elif search:
