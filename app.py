@@ -10,6 +10,38 @@ st.set_page_config(page_title="CAS Price Lookup", page_icon="🧪", layout="wide
 st.title("🧪 CAS Number Price Lookup")
 st.caption("Live pricing & availability from **BLD Pharm** and **Hyma Synthesis**")
 
+# ── Sidebar: BLD Authentication ───────────────────────────
+with st.sidebar:
+    st.header("🔑 BLD Pharm Login")
+    st.caption(
+        "Paste your BLD session cookies to get full stock & pricing data. "
+        "Without cookies, some products show limited info."
+    )
+    bld_cookies_raw = st.text_area(
+        "BLD Cookies",
+        placeholder='Paste cookie string from browser DevTools\ne.g. _xsrf=abc123; session_id=xyz789; ...',
+        height=100,
+        key="_bld_cookies",
+        help=(
+            "How to get your cookies:\n"
+            "1. Log in to bldpharm.com in Chrome\n"
+            "2. Press F12 → Application tab → Cookies → bldpharm.com\n"
+            "3. Copy the cookie values, or:\n"
+            "   - Go to Network tab, click any request\n"
+            "   - Find 'Cookie:' in Request Headers\n"
+            "   - Copy the full value after 'Cookie: '"
+        ),
+    )
+    bld_email = st.text_input("Or: BLD Email", placeholder="your@email.com", key="_bld_email")
+    bld_password = st.text_input("BLD Password", type="password", placeholder="password", key="_bld_password")
+    has_bld_auth = bool(bld_cookies_raw.strip() or (bld_email.strip() and bld_password.strip()))
+    if has_bld_auth:
+        st.success("🔓 BLD credentials provided — will use authenticated session.")
+    else:
+        st.info("🔒 No credentials — using anonymous session (limited data for some products).")
+    st.divider()
+    st.caption("Cookies/credentials are **not stored** — they only live in your current browser session.")
+
 
 _BLD_BASE  = "https://www.bldpharm.com"
 _HYMA_BASE = "https://hymasynthesis.com"
@@ -24,25 +56,99 @@ _BROWSER_HEADERS = {
 }
 
 
-@st.cache_resource
-def get_bld_session():
+def _parse_cookie_string(raw: str) -> dict:
+    """Parse a 'key=value; key2=value2' cookie header into a dict."""
+    cookies = {}
+    for part in raw.split(";"):
+        part = part.strip()
+        if "=" in part:
+            k, v = part.split("=", 1)
+            cookies[k.strip()] = v.strip()
+    return cookies
+
+
+def _build_bld_session(cookie_str: str = "", email: str = "", password: str = ""):
     """
-    A requests Session pre-initialised the way a real browser would visit BLD Pharm:
-    homepage → _xsrf cookie → privacy acknowledgement.
-    Without this, BLD's server omits the stock table from the HTML response.
+    Build a requests Session for BLD Pharm.
+    Priority: user-supplied cookies > login credentials > anonymous session.
     """
     s = requests.Session()
     s.headers.update(_BROWSER_HEADERS)
+
+    # 1) Try user-supplied cookies
+    if cookie_str.strip():
+        for k, v in _parse_cookie_string(cookie_str).items():
+            s.cookies.set(k, v, domain="www.bldpharm.com")
+        # Still hit homepage to warm the session, but cookies are already set
+        try:
+            s.get(f"{_BLD_BASE}/", timeout=15)
+        except Exception:
+            pass
+        return s
+
+    # 2) Try login with email/password
+    if email.strip() and password.strip():
+        try:
+            # First get _xsrf cookie from homepage
+            s.get(f"{_BLD_BASE}/", timeout=15)
+            xsrf = s.cookies.get("_xsrf", "")
+            s.get(
+                f"{_BLD_BASE}/webapi/v1/setcookiebyprivacy?params=e30%3D&_xsrf={xsrf}",
+                timeout=10,
+            )
+            # Attempt login via BLD's API
+            login_payload = base64.b64encode(
+                json.dumps({"email": email, "password": password}).encode()
+            ).decode()
+            login_resp = s.get(
+                f"{_BLD_BASE}/webapi/v1/login?params={login_payload}&_xsrf={xsrf}",
+                timeout=15,
+            )
+            # Also try POST in case GET doesn't work
+            if login_resp.status_code != 200 or not login_resp.json().get("value"):
+                s.post(
+                    f"{_BLD_BASE}/webapi/v1/login",
+                    json={"email": email, "password": password},
+                    headers={"X-Xsrftoken": xsrf},
+                    timeout=15,
+                )
+        except Exception:
+            pass
+        return s
+
+    # 3) Anonymous session (default)
     try:
-        s.get(f"{_BLD_BASE}/", timeout=15)                               # get _xsrf cookie
+        s.get(f"{_BLD_BASE}/", timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
-        s.get(                                                            # accept privacy
+        s.get(
             f"{_BLD_BASE}/webapi/v1/setcookiebyprivacy?params=e30%3D&_xsrf={xsrf}",
             timeout=10,
         )
     except Exception:
         pass
     return s
+
+
+def get_bld_session():
+    """
+    Returns a BLD session. Uses sidebar credentials/cookies if provided,
+    otherwise falls back to an anonymous session.
+    We use session_state instead of cache_resource so the session updates
+    when the user provides new cookies/credentials.
+    """
+    cookie_str = st.session_state.get("_bld_cookies", "")
+    email = st.session_state.get("_bld_email", "")
+    password = st.session_state.get("_bld_password", "")
+
+    # Cache key based on inputs — rebuild session if they change
+    cache_key = f"{cookie_str}|{email}|{password}"
+    if (
+        "_bld_session" not in st.session_state
+        or st.session_state.get("_bld_cache_key") != cache_key
+    ):
+        st.session_state["_bld_session"] = _build_bld_session(cookie_str, email, password)
+        st.session_state["_bld_cache_key"] = cache_key
+    return st.session_state["_bld_session"]
 
 
 @st.cache_resource
@@ -71,7 +177,10 @@ def _stock_icon(val: str) -> str:
 
 
 def _scrape_bld_product(cas: str, url: str) -> dict:
-    """Scrape a single BLD Pharm product page (may include ?BD= param)."""
+    """Scrape a single BLD Pharm product page (may include ?BD= param).
+    Tries the full stock table first; falls back to any stock indicators
+    found anywhere on the page (status badges, availability text, etc.).
+    """
     try:
         resp = get_bld_session().get(url, timeout=20)
     except Exception as e:
@@ -100,6 +209,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
     lt = re.search(r"\d+[-–]\d+\s*weeks?", resp.text, re.IGNORECASE)
     lead_time = lt.group(0) if lt else None
 
+    # ── Primary: full stock table ──
     rows = []
     for tr in soup.select("table.pro_table tr.tr_stock"):
         tds = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
@@ -111,6 +221,63 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
             "Hyderabad":   _stock_icon(tds[4]),
             "Delhi":       _stock_icon(tds[5]),
             "Germany":     _stock_icon(tds[6]),
+        })
+
+    if rows:
+        return {
+            "found": True, "url": url,
+            "cas": cas_no, "name": name,
+            "catalog_no": cat_no, "purity": purity,
+            "lead_time": lead_time, "rows": rows,
+        }
+
+    # ── Fallback: look for ANY stock/availability signals on the page ──
+    page_text = resp.text.lower()
+    stock_signals = {}
+
+    # Check for "in stock" / "out of stock" text anywhere
+    for city_kw, city_label in [
+        ("hyderabad", "Hyderabad"), ("delhi", "Delhi"),
+        ("germany", "Germany"), ("india", "India"),
+    ]:
+        if f"{city_kw}" in page_text:
+            # Try to find stock status near the city name
+            pattern = rf'{city_kw}\s*[:\-]?\s*(in\s*stock|out\s*of\s*stock|available|inquiry|\d+\s*(?:pcs|units|nos)?)'
+            m = re.search(pattern, page_text, re.IGNORECASE)
+            if m:
+                stock_signals[city_label] = _stock_icon(m.group(1))
+
+    # Look for any table that might have stock data (not just pro_table)
+    for table in soup.find_all("table"):
+        for tr in table.find_all("tr"):
+            tds = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
+            # If any cell looks like a pack size (e.g., "1g", "5g", "25g", "100mg")
+            size_match = None
+            for td_text in tds:
+                if re.match(r"^\d+\s*(mg|g|kg|ml|l)\b", td_text, re.IGNORECASE):
+                    size_match = td_text
+                    break
+            if size_match and len(tds) >= 2:
+                row = {"Size": size_match, "Price (INR)": "—",
+                       "Hyderabad": "—", "Delhi": "—", "Germany": "—"}
+                # Try to find price or stock in remaining cells
+                for td_text in tds:
+                    if td_text == size_match:
+                        continue
+                    if re.search(r"(INR|₹|\$|USD|EUR)\s*[\d,]+", td_text, re.IGNORECASE):
+                        row["Price (INR)"] = td_text
+                    elif "stock" in td_text.lower() or "inquiry" in td_text.lower():
+                        row["Hyderabad"] = _stock_icon(td_text)
+                rows.append(row)
+
+    # If we found stock signals but no table rows, create a summary row
+    if not rows and stock_signals:
+        rows.append({
+            "Size": "—",
+            "Price (INR)": "See BLD →",
+            "Hyderabad": stock_signals.get("Hyderabad", stock_signals.get("India", "—")),
+            "Delhi": stock_signals.get("Delhi", "—"),
+            "Germany": stock_signals.get("Germany", "—"),
         })
 
     if not rows:
@@ -191,20 +358,41 @@ def scrape_bld(cas: str) -> dict:
         # Fallback: build table from API price_list (no city breakdown)
         price_list = product.get("price_list", [])
         if not price_list:
-            # If the API returned only s_url (no pricing), the product exists
-            # but we couldn't scrape data. Show a "link-only" entry so the
-            # user can verify on BLD directly.
-            entries.append({
-                "found": True, "url": url,
-                "cas": cas,
-                "name": product.get("p_name", product.get("p_name_cn", "—")),
-                "catalog_no": bd or "—", "purity": "—",
-                "lead_time": None,
-                "rows": [{"Size": "—", "Price (INR)": "Visit BLD →",
-                          "Hyderabad": "—", "Delhi": "—", "Germany": "—"}],
-                "_link_only": True,
-            })
-            continue
+            # Try a secondary product detail API if BD is available
+            if bd:
+                try:
+                    detail_b64 = base64.b64encode(
+                        json.dumps({"bd": bd}).encode()
+                    ).decode()
+                    dr = session.get(
+                        f"{_BLD_BASE}/webapi/v1/productdetail?params={detail_b64}&_xsrf={xsrf}",
+                        timeout=15,
+                    )
+                    if dr.status_code == 200:
+                        det = dr.json().get("value", {})
+                        price_list = det.get("price_list", [])
+                except Exception:
+                    pass
+
+            if not price_list:
+                # Extract whatever we can from the API result
+                p_name = product.get("p_name", product.get("p_name_cn", "—"))
+                p_purity = product.get("p_purity", "—")
+                # Check for stock_number in the top-level product
+                stock_n = product.get("stock_number", 0) or 0
+                stock_status = "✅ In Stock" if stock_n > 0 else "—"
+                entries.append({
+                    "found": True, "url": url,
+                    "cas": cas,
+                    "name": p_name,
+                    "catalog_no": bd or "—",
+                    "purity": p_purity if p_purity else "—",
+                    "lead_time": None,
+                    "rows": [{"Size": "—", "Price (INR)": "Visit BLD →",
+                              "Hyderabad": stock_status, "Delhi": "—", "Germany": "—"}],
+                    "_link_only": True,
+                })
+                continue
 
         rows = []
         for p in price_list:
@@ -319,7 +507,11 @@ if search and cas_input.strip():
     # ── BLD Pharm ──────────────────────────────────────────
     with col_bld:
         st.subheader("🔵 BLD Pharm")
-        with st.spinner("Fetching from bldpharm.com …"):
+        auth_mode = "🔓 authenticated" if (
+            st.session_state.get("_bld_cookies", "").strip() or
+            (st.session_state.get("_bld_email", "").strip() and st.session_state.get("_bld_password", "").strip())
+        ) else "🔒 anonymous"
+        with st.spinner(f"Fetching from bldpharm.com ({auth_mode}) …"):
             bld = scrape_bld(cas)
 
         if "error" in bld:
@@ -385,13 +577,18 @@ if search and cas_input.strip():
                     for r in cat_rows
                 ]
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
-                # Hyma's Angular SPA ignores URL query params — link to
-                # the Products page; the catalog number is shown in the label
-                # so the user can type it into the search box themselves.
-                st.link_button(
-                    f"🔗 Open Hyma Products (search: {cat}) →",
-                    f"{_HYMA_BASE}/Products",
-                )
+                # Hyma's Angular SPA ignores URL query params — we can't
+                # deep-link to a specific product. Provide copyable catalog
+                # number + CAS so the user can paste into Hyma's search box.
+                link_col, copy_col = st.columns([1, 1])
+                with link_col:
+                    st.link_button(
+                        f"🔗 Open Hyma Products →",
+                        f"{_HYMA_BASE}/Products",
+                    )
+                with copy_col:
+                    st.code(cat, language=None)
+                st.caption(f"💡 Copy **{cat}** or **{cas}** and paste into the search box on Hyma's site.")
 
 elif search:
     st.warning("Please enter a CAS number.")
