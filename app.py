@@ -32,15 +32,12 @@ with st.sidebar:
             "   - Copy the full value after 'Cookie: '"
         ),
     )
-    bld_email = st.text_input("Or: BLD Email", placeholder="your@email.com", key="_bld_email")
-    bld_password = st.text_input("BLD Password", type="password", placeholder="password", key="_bld_password")
-    has_bld_auth = bool(bld_cookies_raw.strip() or (bld_email.strip() and bld_password.strip()))
-    if has_bld_auth:
-        st.success("🔓 BLD credentials provided — will use authenticated session.")
+    if bld_cookies_raw.strip():
+        st.success("🔓 Cookies provided — will use authenticated session.")
     else:
-        st.info("🔒 No credentials — using anonymous session (limited data for some products).")
+        st.info("🔒 No cookies — BLD stock data may be limited from cloud servers.")
     st.divider()
-    st.caption("Cookies/credentials are **not stored** — they only live in your current browser session.")
+    st.caption("Cookies are **not stored** — they only live in your current browser session.")
 
 
 _BLD_BASE  = "https://www.bldpharm.com"
@@ -67,10 +64,10 @@ def _parse_cookie_string(raw: str) -> dict:
     return cookies
 
 
-def _build_bld_session(cookie_str: str = "", email: str = "", password: str = ""):
+def _build_bld_session(cookie_str: str = ""):
     """
     Build a requests Session for BLD Pharm.
-    Priority: user-supplied cookies > login credentials > anonymous session.
+    Uses user-supplied cookies if provided, otherwise anonymous session.
     """
     s = requests.Session()
     s.headers.update(_BROWSER_HEADERS)
@@ -79,44 +76,13 @@ def _build_bld_session(cookie_str: str = "", email: str = "", password: str = ""
     if cookie_str.strip():
         for k, v in _parse_cookie_string(cookie_str).items():
             s.cookies.set(k, v, domain="www.bldpharm.com")
-        # Still hit homepage to warm the session, but cookies are already set
         try:
             s.get(f"{_BLD_BASE}/", timeout=15)
         except Exception:
             pass
         return s
 
-    # 2) Try login with email/password
-    if email.strip() and password.strip():
-        try:
-            # First get _xsrf cookie from homepage
-            s.get(f"{_BLD_BASE}/", timeout=15)
-            xsrf = s.cookies.get("_xsrf", "")
-            s.get(
-                f"{_BLD_BASE}/webapi/v1/setcookiebyprivacy?params=e30%3D&_xsrf={xsrf}",
-                timeout=10,
-            )
-            # Attempt login via BLD's API
-            login_payload = base64.b64encode(
-                json.dumps({"email": email, "password": password}).encode()
-            ).decode()
-            login_resp = s.get(
-                f"{_BLD_BASE}/webapi/v1/login?params={login_payload}&_xsrf={xsrf}",
-                timeout=15,
-            )
-            # Also try POST in case GET doesn't work
-            if login_resp.status_code != 200 or not login_resp.json().get("value"):
-                s.post(
-                    f"{_BLD_BASE}/webapi/v1/login",
-                    json={"email": email, "password": password},
-                    headers={"X-Xsrftoken": xsrf},
-                    timeout=15,
-                )
-        except Exception:
-            pass
-        return s
-
-    # 3) Anonymous session (default)
+    # 2) Anonymous session (default)
     try:
         s.get(f"{_BLD_BASE}/", timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
@@ -131,22 +97,16 @@ def _build_bld_session(cookie_str: str = "", email: str = "", password: str = ""
 
 def get_bld_session():
     """
-    Returns a BLD session. Uses sidebar credentials/cookies if provided,
+    Returns a BLD session. Uses sidebar cookies if provided,
     otherwise falls back to an anonymous session.
-    We use session_state instead of cache_resource so the session updates
-    when the user provides new cookies/credentials.
     """
     cookie_str = st.session_state.get("_bld_cookies", "")
-    email = st.session_state.get("_bld_email", "")
-    password = st.session_state.get("_bld_password", "")
-
-    # Cache key based on inputs — rebuild session if they change
-    cache_key = f"{cookie_str}|{email}|{password}"
+    cache_key = cookie_str
     if (
         "_bld_session" not in st.session_state
         or st.session_state.get("_bld_cache_key") != cache_key
     ):
-        st.session_state["_bld_session"] = _build_bld_session(cookie_str, email, password)
+        st.session_state["_bld_session"] = _build_bld_session(cookie_str)
         st.session_state["_bld_cache_key"] = cache_key
     return st.session_state["_bld_session"]
 
@@ -261,11 +221,12 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
             "Germany": stock_signals.get("Germany", "—"),
         })
 
-    if not rows:
-        return {"found": False}
-
+    # Always return partial data (name, cat_no, purity) even if no stock rows.
+    # The caller can use this to fill in the fallback entry and try the
+    # productdetail API with the extracted BD number.
     return {
-        "found": True, "url": url,
+        "found": bool(rows),
+        "url": url,
         "cas": cas_no, "name": name,
         "catalog_no": cat_no, "purity": purity,
         "lead_time": lead_time, "rows": rows,
@@ -330,50 +291,58 @@ def scrape_bld(cas: str) -> dict:
             f"https://www.bldpharm.com/products/{s_url}"
         )
 
-        # Try to get city-level stock from HTML product page
-        entry = _scrape_bld_product(cas, url)
-        if entry.get("found"):
-            entries.append(entry)
+        # Try to get city-level stock from HTML product page.
+        # _scrape_bld_product always returns partial data (name, cat_no, purity)
+        # even if the stock table isn't available (geo-IP restriction).
+        html_data = _scrape_bld_product(cas, url)
+        if html_data.get("found") and html_data.get("rows"):
+            entries.append(html_data)
             continue
+
+        # Use the HTML-extracted BD number if the API didn't provide one
+        html_bd = html_data.get("catalog_no", "—")
+        effective_bd = bd or (html_bd if html_bd != "—" else "")
 
         # Fallback: build table from API price_list (no city breakdown)
         price_list = product.get("price_list", [])
-        if not price_list:
-            # Try a secondary product detail API if BD is available
-            if bd:
-                try:
-                    detail_b64 = base64.b64encode(
-                        json.dumps({"bd": bd}).encode()
-                    ).decode()
-                    dr = session.get(
-                        f"{_BLD_BASE}/webapi/v1/productdetail?params={detail_b64}&_xsrf={xsrf}",
-                        timeout=15,
-                    )
-                    if dr.status_code == 200:
-                        det = dr.json().get("value", {})
-                        price_list = det.get("price_list", [])
-                except Exception:
-                    pass
+        if not price_list and effective_bd:
+            # Try the productdetail API with the BD number
+            try:
+                detail_b64 = base64.b64encode(
+                    json.dumps({"bd": effective_bd}).encode()
+                ).decode()
+                dr = session.get(
+                    f"{_BLD_BASE}/webapi/v1/productdetail?params={detail_b64}&_xsrf={xsrf}",
+                    timeout=15,
+                )
+                if dr.status_code == 200:
+                    det = dr.json().get("value", {})
+                    price_list = det.get("price_list", [])
+            except Exception:
+                pass
 
-            if not price_list:
-                # Extract whatever we can from the API result
+        if not price_list:
+            # Use partial HTML data for display (name, cat_no, purity)
+            p_name = html_data.get("name", "—")
+            if p_name == "—":
                 p_name = _strip_html(product.get("p_name", product.get("p_name_cn", "—")))
+            p_purity = html_data.get("purity", "—")
+            if p_purity == "—":
                 p_purity = _strip_html(product.get("p_purity", "—"))
-                # Check for stock_number in the top-level product
-                stock_n = product.get("stock_number", 0) or 0
-                stock_status = "✅ In Stock" if stock_n > 0 else "—"
-                entries.append({
-                    "found": True, "url": url,
-                    "cas": cas,
-                    "name": p_name,
-                    "catalog_no": bd or "—",
-                    "purity": p_purity if p_purity else "—",
-                    "lead_time": None,
-                    "rows": [{"Size": "—", "Price (INR)": "Visit BLD →",
-                              "Hyderabad": stock_status, "Delhi": "—", "Germany": "—"}],
-                    "_link_only": True,
-                })
-                continue
+            stock_n = product.get("stock_number", 0) or 0
+            stock_status = "✅ In Stock" if stock_n > 0 else "—"
+            entries.append({
+                "found": True, "url": url,
+                "cas": cas,
+                "name": p_name,
+                "catalog_no": effective_bd or "—",
+                "purity": p_purity if p_purity else "—",
+                "lead_time": html_data.get("lead_time"),
+                "rows": [{"Size": "—", "Price (INR)": "Visit BLD →",
+                          "Hyderabad": stock_status, "Delhi": "—", "Germany": "—"}],
+                "_link_only": True,
+            })
+            continue
 
         rows = []
         for p in price_list:
@@ -385,12 +354,16 @@ def scrape_bld(cas: str) -> dict:
                 "Delhi":       "—",
                 "Germany":     "—",
             })
+        p_name = html_data.get("name", "—")
+        if p_name == "—":
+            p_name = _strip_html(product.get("p_name", product.get("p_name_cn", "—")))
         entries.append({
             "found": True, "url": url,
             "cas": cas,
-            "name": _strip_html(product.get("p_name", product.get("p_name_cn", "—"))),
-            "catalog_no": bd, "purity": _strip_html(product.get("p_purity", "—")),
-            "lead_time": None, "rows": rows,
+            "name": p_name,
+            "catalog_no": effective_bd or bd,
+            "purity": html_data.get("purity", _strip_html(product.get("p_purity", "—"))),
+            "lead_time": html_data.get("lead_time"), "rows": rows,
         })
 
     if not entries:
@@ -488,10 +461,7 @@ if search and cas_input.strip():
     # ── BLD Pharm ──────────────────────────────────────────
     with col_bld:
         st.subheader("🔵 BLD Pharm")
-        auth_mode = "🔓 authenticated" if (
-            st.session_state.get("_bld_cookies", "").strip() or
-            (st.session_state.get("_bld_email", "").strip() and st.session_state.get("_bld_password", "").strip())
-        ) else "🔒 anonymous"
+        auth_mode = "🔓 authenticated" if st.session_state.get("_bld_cookies", "").strip() else "🔒 anonymous"
         with st.spinner(f"Fetching from bldpharm.com ({auth_mode}) …"):
             bld = scrape_bld(cas)
 
@@ -550,7 +520,6 @@ if search and cas_input.strip():
                     {
                         "Pack Size":            r["Pack Size"],
                         "Price (INR)":          r["Price (INR)"],
-                        "Hyd. Avail. to Order": r["Hyd. Avail. to Order"],
                         "Hyd. Total Stock":     r["Hyd. Total Stock"],
                         "Hyderabad Status":     r["Hyderabad Status"],
                         "GST":                  r["GST"],
