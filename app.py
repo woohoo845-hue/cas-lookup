@@ -124,7 +124,13 @@ def scrape_bld(cas: str) -> dict:
     for product in results:
         bd    = product.get("p_bd", "")
         s_url = product.get("s_url", f"{cas}.html")
-        url   = f"https://www.bldpharm.com/products/{s_url}?BD={bd}"
+        # Only append ?BD= when a catalog number is actually present;
+        # some CAS entries have a direct page with no BD parameter.
+        url = (
+            f"https://www.bldpharm.com/products/{s_url}?BD={bd}"
+            if bd else
+            f"https://www.bldpharm.com/products/{s_url}"
+        )
 
         # Try to get city-level stock from HTML product page
         entry = _scrape_bld_product(cas, url)
@@ -318,7 +324,7 @@ if search and cas_input.strip():
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
                 st.link_button(
                     f"🔗 Search {cat} on Hyma →",
-                    f"https://hymasynthesis.com/Products?ItemCode={cat}",
+                    f"https://hymasynthesis.com/Products?Value={cat}",
                 )
 
 elif search:
