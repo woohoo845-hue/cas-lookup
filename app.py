@@ -168,12 +168,17 @@ def get_session():
 #   0=Size  1=Price  2=Special Offer  3=US-qty(login)
 #   4=Hyderabad  5=Delhi  6=Germany  7=Global(login)
 
+def _strip_html(text: str) -> str:
+    """Remove HTML tags from a string."""
+    return re.sub(r"<[^>]+>", "", text).strip()
+
+
 def _stock_icon(val: str) -> str:
-    v = val.lower().strip()
+    v = _strip_html(val).lower().strip()
     if "in stock" in v:   return "✅ In Stock"
     if "inquiry" in v:    return "📋 Inquiry"
     if "sign in" in v:    return "🔒 Sign In"
-    return val or "—"
+    return _strip_html(val) or "—"
 
 
 def _scrape_bld_product(cas: str, url: str) -> dict:
@@ -194,15 +199,15 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
     soup = BeautifulSoup(resp.text, "html.parser")
 
     parts  = (soup.title.string or "").split("|")
-    cas_no = parts[0].strip() if parts else cas
-    name   = parts[1].strip() if len(parts) > 1 else "—"
+    cas_no = _strip_html(parts[0].strip()) if parts else cas
+    name   = _strip_html(parts[1].strip()) if len(parts) > 1 else "—"
 
     cat_no, purity = "—", "—"
     for el in soup.find_all(string=re.compile(r"Cat\.\s*No\.")):
         txt = el.parent.get_text(" ", strip=True)
-        m   = re.search(r"Cat\.\s*No\.:\s*(\S+)", txt)
+        m   = re.search(r"Cat\.\s*No\.:\s*(BD\w+)", txt)
         m2  = re.search(r"(\d+%)", txt)
-        if m:  cat_no = m.group(1)
+        if m:  cat_no = _strip_html(m.group(1))
         if m2: purity = m2.group(1)
         if cat_no != "—": break
 
@@ -231,51 +236,27 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
             "lead_time": lead_time, "rows": rows,
         }
 
-    # ── Fallback: look for ANY stock/availability signals on the page ──
+    # ── Fallback: look for stock/availability text signals on the page ──
+    # Only look for clear "in stock" / "out of stock" text near city names.
+    # Do NOT try to scrape arbitrary tables — they contain unrelated data
+    # (product IDs, related products, etc.) that produces false positives.
     page_text = resp.text.lower()
     stock_signals = {}
 
-    # Check for "in stock" / "out of stock" text anywhere
     for city_kw, city_label in [
         ("hyderabad", "Hyderabad"), ("delhi", "Delhi"),
-        ("germany", "Germany"), ("india", "India"),
+        ("germany", "Germany"),
     ]:
-        if f"{city_kw}" in page_text:
-            # Try to find stock status near the city name
-            pattern = rf'{city_kw}\s*[:\-]?\s*(in\s*stock|out\s*of\s*stock|available|inquiry|\d+\s*(?:pcs|units|nos)?)'
-            m = re.search(pattern, page_text, re.IGNORECASE)
-            if m:
-                stock_signals[city_label] = _stock_icon(m.group(1))
+        pattern = rf'{city_kw}\s*[:\-]?\s*(in\s*stock|out\s*of\s*stock|available|inquiry)'
+        m = re.search(pattern, page_text, re.IGNORECASE)
+        if m:
+            stock_signals[city_label] = _stock_icon(m.group(1))
 
-    # Look for any table that might have stock data (not just pro_table)
-    for table in soup.find_all("table"):
-        for tr in table.find_all("tr"):
-            tds = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
-            # If any cell looks like a pack size (e.g., "1g", "5g", "25g", "100mg")
-            size_match = None
-            for td_text in tds:
-                if re.match(r"^\d+\s*(mg|g|kg|ml|l)\b", td_text, re.IGNORECASE):
-                    size_match = td_text
-                    break
-            if size_match and len(tds) >= 2:
-                row = {"Size": size_match, "Price (INR)": "—",
-                       "Hyderabad": "—", "Delhi": "—", "Germany": "—"}
-                # Try to find price or stock in remaining cells
-                for td_text in tds:
-                    if td_text == size_match:
-                        continue
-                    if re.search(r"(INR|₹|\$|USD|EUR)\s*[\d,]+", td_text, re.IGNORECASE):
-                        row["Price (INR)"] = td_text
-                    elif "stock" in td_text.lower() or "inquiry" in td_text.lower():
-                        row["Hyderabad"] = _stock_icon(td_text)
-                rows.append(row)
-
-    # If we found stock signals but no table rows, create a summary row
-    if not rows and stock_signals:
+    if stock_signals:
         rows.append({
             "Size": "—",
             "Price (INR)": "See BLD →",
-            "Hyderabad": stock_signals.get("Hyderabad", stock_signals.get("India", "—")),
+            "Hyderabad": stock_signals.get("Hyderabad", "—"),
             "Delhi": stock_signals.get("Delhi", "—"),
             "Germany": stock_signals.get("Germany", "—"),
         })
@@ -339,8 +320,8 @@ def scrape_bld(cas: str) -> dict:
 
     entries = []
     for product in results:
-        bd    = product.get("p_bd", "")
-        s_url = product.get("s_url", f"{cas}.html")
+        bd    = _strip_html(product.get("p_bd", ""))
+        s_url = _strip_html(product.get("s_url", f"{cas}.html"))
         # Only append ?BD= when a catalog number is actually present;
         # some CAS entries have a direct page with no BD parameter.
         url = (
@@ -376,8 +357,8 @@ def scrape_bld(cas: str) -> dict:
 
             if not price_list:
                 # Extract whatever we can from the API result
-                p_name = product.get("p_name", product.get("p_name_cn", "—"))
-                p_purity = product.get("p_purity", "—")
+                p_name = _strip_html(product.get("p_name", product.get("p_name_cn", "—")))
+                p_purity = _strip_html(product.get("p_purity", "—"))
                 # Check for stock_number in the top-level product
                 stock_n = product.get("stock_number", 0) or 0
                 stock_status = "✅ In Stock" if stock_n > 0 else "—"
@@ -407,8 +388,8 @@ def scrape_bld(cas: str) -> dict:
         entries.append({
             "found": True, "url": url,
             "cas": cas,
-            "name": product.get("p_name", product.get("p_name_cn", "—")),
-            "catalog_no": bd, "purity": "—",
+            "name": _strip_html(product.get("p_name", product.get("p_name_cn", "—"))),
+            "catalog_no": bd, "purity": _strip_html(product.get("p_purity", "—")),
             "lead_time": None, "rows": rows,
         })
 
