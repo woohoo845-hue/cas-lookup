@@ -10,34 +10,22 @@ st.set_page_config(page_title="CAS Price Lookup", page_icon="🧪", layout="wide
 st.title("🧪 CAS Number Price Lookup")
 st.caption("Live pricing & availability from **BLD Pharm** and **Hyma Synthesis**")
 
-# ── Sidebar: BLD Authentication ───────────────────────────
+# ── Sidebar: Info ─────────────────────────────────────────
 with st.sidebar:
-    st.header("🔑 BLD Pharm Login")
+    st.header("ℹ️ About")
     st.caption(
-        "Paste your BLD session cookies to get full stock & pricing data. "
-        "Without cookies, some products show limited info."
+        "This app fetches live pricing and stock data from "
+        "**BLD Pharm** and **Hyma Synthesis**."
     )
-    bld_cookies_raw = st.text_area(
-        "BLD Cookies",
-        placeholder='Paste cookie string from browser DevTools\ne.g. _xsrf=abc123; session_id=xyz789; ...',
-        height=100,
-        key="_bld_cookies",
-        help=(
-            "How to get your cookies:\n"
-            "1. Log in to bldpharm.com in Chrome\n"
-            "2. Press F12 → Application tab → Cookies → bldpharm.com\n"
-            "3. Copy the cookie values, or:\n"
-            "   - Go to Network tab, click any request\n"
-            "   - Find 'Cookie:' in Request Headers\n"
-            "   - Copy the full value after 'Cookie: '"
-        ),
-    )
-    if bld_cookies_raw.strip():
-        st.success("🔓 Cookies provided — will use authenticated session.")
-    else:
-        st.info("🔒 No cookies — BLD stock data may be limited from cloud servers.")
     st.divider()
-    st.caption("Cookies are **not stored** — they only live in your current browser session.")
+    st.subheader("🏠 Run Locally for Full Data")
+    st.markdown(
+        "BLD Pharm restricts stock data by region (IP-based). "
+        "For full stock availability, run this app locally from India:\n"
+        "```\npip install streamlit requests beautifulsoup4\nstreamlit run app.py\n```"
+    )
+    st.divider()
+    st.caption("Built by Sreeni Labs")
 
 
 _BLD_BASE  = "https://www.bldpharm.com"
@@ -53,36 +41,10 @@ _BROWSER_HEADERS = {
 }
 
 
-def _parse_cookie_string(raw: str) -> dict:
-    """Parse a 'key=value; key2=value2' cookie header into a dict."""
-    cookies = {}
-    for part in raw.split(";"):
-        part = part.strip()
-        if "=" in part:
-            k, v = part.split("=", 1)
-            cookies[k.strip()] = v.strip()
-    return cookies
-
-
-def _build_bld_session(cookie_str: str = ""):
-    """
-    Build a requests Session for BLD Pharm.
-    Uses user-supplied cookies if provided, otherwise anonymous session.
-    """
+def _build_bld_session():
+    """Build an anonymous requests Session for BLD Pharm."""
     s = requests.Session()
     s.headers.update(_BROWSER_HEADERS)
-
-    # 1) Try user-supplied cookies
-    if cookie_str.strip():
-        for k, v in _parse_cookie_string(cookie_str).items():
-            s.cookies.set(k, v, domain="www.bldpharm.com")
-        try:
-            s.get(f"{_BLD_BASE}/", timeout=15)
-        except Exception:
-            pass
-        return s
-
-    # 2) Anonymous session (default)
     try:
         s.get(f"{_BLD_BASE}/", timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
@@ -96,18 +58,9 @@ def _build_bld_session(cookie_str: str = ""):
 
 
 def get_bld_session():
-    """
-    Returns a BLD session. Uses sidebar cookies if provided,
-    otherwise falls back to an anonymous session.
-    """
-    cookie_str = st.session_state.get("_bld_cookies", "")
-    cache_key = cookie_str
-    if (
-        "_bld_session" not in st.session_state
-        or st.session_state.get("_bld_cache_key") != cache_key
-    ):
-        st.session_state["_bld_session"] = _build_bld_session(cookie_str)
-        st.session_state["_bld_cache_key"] = cache_key
+    """Returns a cached BLD session."""
+    if "_bld_session" not in st.session_state:
+        st.session_state["_bld_session"] = _build_bld_session()
     return st.session_state["_bld_session"]
 
 
@@ -126,7 +79,7 @@ def get_session():
 # ── BLD Pharm ──────────────────────────────────────────────
 # Stock table columns (0-indexed):
 #   0=Size  1=Price  2=Special Offer  3=US-qty(login)
-#   4=Hyderabad  5=Delhi  6=Germany  7=Global(login)
+#   4=Hyderabad  5=Delhi  6=Global  7=Qty
 
 def _strip_html(text: str) -> str:
     """Remove HTML tags from a string."""
@@ -185,7 +138,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
             "Price (INR)": tds[1],
             "Hyderabad":   _stock_icon(tds[4]),
             "Delhi":       _stock_icon(tds[5]),
-            "Germany":     _stock_icon(tds[6]),
+            "Global":      _stock_icon(tds[6]),
         })
 
     if rows:
@@ -205,7 +158,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
 
     for city_kw, city_label in [
         ("hyderabad", "Hyderabad"), ("delhi", "Delhi"),
-        ("germany", "Germany"),
+        ("global", "Global"),
     ]:
         pattern = rf'{city_kw}\s*[:\-]?\s*(in\s*stock|out\s*of\s*stock|available|inquiry)'
         m = re.search(pattern, page_text, re.IGNORECASE)
@@ -218,7 +171,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
             "Price (INR)": "See BLD →",
             "Hyderabad": stock_signals.get("Hyderabad", "—"),
             "Delhi": stock_signals.get("Delhi", "—"),
-            "Germany": stock_signals.get("Germany", "—"),
+            "Global": stock_signals.get("Global", "—"),
         })
 
     # Always return partial data (name, cat_no, purity) even if no stock rows.
@@ -242,7 +195,7 @@ def scrape_bld(cas: str) -> dict:
        (The search results page is JS-rendered and cannot be parsed server-side;
         the JSON API is the canonical way to enumerate BD catalog numbers.)
     2. For each catalog entry, scrape the HTML product page for
-       city-level stock (Hyderabad / Delhi / Germany).
+       city-level stock (Hyderabad / Delhi / Global).
     3. Fall back to API price data if the HTML page yields no table.
     """
     session = get_bld_session()
@@ -339,7 +292,7 @@ def scrape_bld(cas: str) -> dict:
                 "purity": p_purity if p_purity else "—",
                 "lead_time": html_data.get("lead_time"),
                 "rows": [{"Size": "—", "Price (INR)": "Visit BLD →",
-                          "Hyderabad": stock_status, "Delhi": "—", "Germany": "—"}],
+                          "Hyderabad": stock_status, "Delhi": "—", "Global": "—"}],
                 "_link_only": True,
             })
             continue
@@ -352,7 +305,7 @@ def scrape_bld(cas: str) -> dict:
                 "Price (INR)": f"INR {p['newprice']}" if p.get("newprice") else "Inquiry",
                 "Hyderabad":   "✅ In Stock" if stock_n > 0 else "❌ Out of Stock",
                 "Delhi":       "—",
-                "Germany":     "—",
+                "Global":      "—",
             })
         p_name = html_data.get("name", "—")
         if p_name == "—":
@@ -461,8 +414,7 @@ if search and cas_input.strip():
     # ── BLD Pharm ──────────────────────────────────────────
     with col_bld:
         st.subheader("🔵 BLD Pharm")
-        auth_mode = "🔓 authenticated" if st.session_state.get("_bld_cookies", "").strip() else "🔒 anonymous"
-        with st.spinner(f"Fetching from bldpharm.com ({auth_mode}) …"):
+        with st.spinner("Fetching from bldpharm.com …"):
             bld = scrape_bld(cas)
 
         if "error" in bld:
@@ -481,9 +433,9 @@ if search and cas_input.strip():
                 if entry.get("lead_time"):
                     st.caption(f"⏱ Lead time for custom/large sizes: **{entry['lead_time']}**")
 
-                st.markdown("**Stock by location (Hyderabad · Delhi · Germany):**")
+                st.markdown("**Stock by location (Hyderabad · Delhi · Global):**")
                 st.dataframe(entry["rows"], use_container_width=True, hide_index=True)
-                st.caption("🔒 US & Global stock quantities require sign-in on BLD Pharm.")
+                st.caption("💡 Full stock data requires running this app from an Indian IP. See sidebar for details.")
                 st.link_button(
                     f"🔗 View {entry['catalog_no']} on BLD Pharm →",
                     entry["url"],
