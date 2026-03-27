@@ -1,3 +1,5 @@
+import base64
+import json
 import re
 import requests
 import streamlit as st
@@ -89,58 +91,73 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
     }
 
 
+_BLD_API = "https://www.bldpharm.com/webapi/v1/productlistbykeyword"
+
+
 def scrape_bld(cas: str) -> dict:
     """
-    1. Fetch search page to enumerate all BD catalog numbers for this CAS.
-    2. Scrape each catalog's product page individually.
-    3. Fallback to direct URL if search yields no BD numbers.
+    1. Query BLD's JSON API to discover all catalog entries for a CAS number.
+       (The search results page is JS-rendered and cannot be parsed server-side;
+        the JSON API is the canonical way to enumerate BD catalog numbers.)
+    2. For each catalog entry, scrape the HTML product page for
+       city-level stock (Hyderabad / Delhi / Germany).
+    3. Fall back to API price data if the HTML page yields no table.
     """
-    session = get_session()
+    params_b64 = base64.b64encode(
+        json.dumps({"keyword": cas, "pageindex": 1, "country": ""}).encode()
+    ).decode()
 
-    # Step 1 — search page
-    search_url = f"https://www.bldpharm.com/search/Search.html?keyword={cas}"
     try:
-        r = session.get(search_url, timeout=20)
+        r = get_session().get(
+            f"{_BLD_API}?params={params_b64}&_xsrf=", timeout=20
+        )
+        r.raise_for_status()
+        api_data = r.json()
     except Exception as e:
         return {"error": str(e)}
 
-    if r.status_code != 200:
-        return {"error": f"BLD Pharm search returned HTTP {r.status_code}"}
-
-    soup = BeautifulSoup(r.text, "html.parser")
-
-    # Extract unique BD catalog numbers from href attributes
-    bd_numbers = []
-    pattern = re.compile(
-        r"/products/" + re.escape(cas) + r"\.html\?BD=([\w]+)", re.IGNORECASE
-    )
-    for a in soup.find_all("a", href=True):
-        m = pattern.search(a["href"])
-        if m:
-            bd = m.group(1)
-            if bd not in bd_numbers:
-                bd_numbers.append(bd)
-
-    # Step 2 — scrape each catalog entry
-    if bd_numbers:
-        entries = []
-        for bd in bd_numbers:
-            url   = f"https://www.bldpharm.com/products/{cas}.html?BD={bd}"
-            entry = _scrape_bld_product(cas, url)
-            if entry.get("found"):
-                entries.append(entry)
-        if entries:
-            return {"found": True, "cas": cas, "entries": entries}
-        return {"found": False, "message": f"CAS **{cas}** found in search but no pricing data available."}
-
-    # Fallback — try direct product page (single-entry CAS)
-    direct_url = f"https://www.bldpharm.com/products/{cas}.html"
-    entry = _scrape_bld_product(cas, direct_url)
-    if "error" in entry:
-        return entry
-    if not entry["found"]:
+    results = api_data.get("value", {}).get("result", [])
+    if not results:
         return {"found": False, "message": f"CAS **{cas}** not found on BLD Pharm."}
-    return {"found": True, "cas": cas, "entries": [entry]}
+
+    entries = []
+    for product in results:
+        bd    = product.get("p_bd", "")
+        s_url = product.get("s_url", f"{cas}.html")
+        url   = f"https://www.bldpharm.com/products/{s_url}?BD={bd}"
+
+        # Try to get city-level stock from HTML product page
+        entry = _scrape_bld_product(cas, url)
+        if entry.get("found"):
+            entries.append(entry)
+            continue
+
+        # Fallback: build table from API price_list (no city breakdown)
+        price_list = product.get("price_list", [])
+        if not price_list:
+            continue
+
+        rows = []
+        for p in price_list:
+            stock_n = p.get("stock_number", 0) or 0
+            rows.append({
+                "Size":        p.get("pr_size", "—"),
+                "Price (INR)": f"INR {p['newprice']}" if p.get("newprice") else "Inquiry",
+                "Hyderabad":   "✅ In Stock" if stock_n > 0 else "❌ Out of Stock",
+                "Delhi":       "—",
+                "Germany":     "—",
+            })
+        entries.append({
+            "found": True, "url": url,
+            "cas": cas,
+            "name": product.get("p_name", product.get("p_name_cn", "—")),
+            "catalog_no": bd, "purity": "—",
+            "lead_time": None, "rows": rows,
+        })
+
+    if not entries:
+        return {"found": False, "message": f"CAS **{cas}** found but no pricing data available on BLD Pharm."}
+    return {"found": True, "cas": cas, "entries": entries}
 
 
 # ── Hyma Synthesis ─────────────────────────────────────────
