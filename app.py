@@ -484,7 +484,15 @@ if search and cas_input.strip():
                     for r in cat_rows
                 ]
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
-                st.link_button("🔗 Open Hyma Products →", f"{_HYMA_BASE}/Products")
+                st.components.v1.html(f"""
+                    <button onclick="
+                        navigator.clipboard.writeText('{cat}');
+                        window.open('https://hymasynthesis.com/Products', '_blank');
+                    " style="
+                        background:#7B2FBE; color:white; border:none; border-radius:6px;
+                        padding:8px 16px; font-size:14px; cursor:pointer; width:100%;
+                    ">🔗 Open Hyma Products → (copies {cat} to clipboard)</button>
+                """, height=45)
 
 elif search:
     st.warning("Please enter a CAS number.")
