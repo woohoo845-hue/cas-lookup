@@ -372,30 +372,27 @@ def scrape_hyma(cas: str) -> dict:
             price      = item.get("Price", "").strip() or "Inquiry"
             qty_avail  = item.get("QtyA", "0")   # available to dispatch (Hyderabad)
             qty_total  = item.get("Qty",  "0")   # total Hyderabad warehouse stock
-            gst        = item.get("GSTTAX", 0)
 
             try:   avail_f = float(qty_avail)
             except: avail_f = 0.0
             try:   total_f = float(qty_total)
             except: total_f = 0.0
 
+            stock_num = int(avail_f) if avail_f > 0 else int(total_f)
             if avail_f > 0:
-                hyd_status = "✅ In Stock"
+                hyd_stock = f"{stock_num} ✅"
             elif total_f > 0:
-                hyd_status = "📦 Stock Exists"
+                hyd_stock = f"{stock_num} 📦"
             else:
-                hyd_status = "❌ Out of Stock"
+                hyd_stock = "0 ❌"
 
             all_rows.append({
-                "Catalog No":              catalog_no,
-                "Name":                    item_name,
-                "Group":                   group,
-                "Pack Size":               pack_size,
-                "Price (INR)":             price,
-                "Hyd. Avail. to Order":    str(int(avail_f)) if avail_f > 0 else "0",
-                "Hyd. Total Stock":        str(total_f).rstrip("0").rstrip(".") if total_f else "0",
-                "Hyderabad Status":        hyd_status,
-                "GST":                     f"{gst}%",
+                "Catalog No":   catalog_no,
+                "Name":         item_name,
+                "Group":        group,
+                "Pack Size":    pack_size,
+                "Price (INR)":  price,
+                "Hyd. Stock":   hyd_stock,
             })
 
     if not all_rows:
@@ -472,11 +469,9 @@ if search and cas_input.strip():
                 st.markdown(label)
                 display_rows = [
                     {
-                        "Pack Size":            r["Pack Size"],
-                        "Price (INR)":          r["Price (INR)"],
-                        "Hyd. Total Stock":     r["Hyd. Total Stock"],
-                        "Hyderabad Status":     r["Hyderabad Status"],
-                        "GST":                  r["GST"],
+                        "Pack Size":    r["Pack Size"],
+                        "Price (INR)":  r["Price (INR)"],
+                        "Hyd. Stock":   r["Hyd. Stock"],
                     }
                     for r in cat_rows
                 ]
