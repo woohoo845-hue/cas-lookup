@@ -434,8 +434,20 @@ if search and cas_input.strip():
                 c3.metric("Purity",   entry["purity"])
                 if entry.get("lead_time"):
                     st.caption(f"⏱ Lead time for custom/large sizes: **{entry['lead_time']}**")
+                if entry.get("rows"):
+                    display_rows = [
+                        {
+                            "Size":          r["Size"],
+                            "Price (INR)":   r["Price (INR)"],
+                            "Hyderabad":     r["Hyderabad"],
+                            "Delhi":         r.get("Delhi", "—"),
+                            "Global":        r.get("Global", "—"),
+                        }
+                        for r in entry["rows"]
+                    ]
+                    st.dataframe(display_rows, use_container_width=True, hide_index=True)
                 st.link_button(
-                    f"🔗 View stock & pricing for {entry['catalog_no']} on BLD Pharm →",
+                    f"🔗 View on BLD Pharm →",
                     entry["url"],
                     use_container_width=True,
                 )
