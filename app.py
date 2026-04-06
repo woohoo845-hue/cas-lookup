@@ -7,6 +7,17 @@ from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="CAS Price Lookup", page_icon="🧪", layout="wide")
 
+# Hide Streamlit default UI chrome (menu, footer, header)
+st.markdown("""
+    <style>
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        [data-testid="stToolbar"] {visibility: hidden;}
+        [data-testid="stDecoration"] {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("🧪 CAS Number Price Lookup")
 st.caption("Live pricing & availability from **BLD Pharm** and **Hyma Synthesis**")
 
