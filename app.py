@@ -18,13 +18,6 @@ with st.sidebar:
         "**BLD Pharm** and **Hyma Synthesis**."
     )
     st.divider()
-    st.subheader("🏠 Run Locally for Full Data")
-    st.markdown(
-        "BLD Pharm restricts stock data by region (IP-based). "
-        "For full stock availability, run this app locally from India:\n"
-        "```\npip install streamlit requests beautifulsoup4\nstreamlit run app.py\n```"
-    )
-    st.divider()
     st.caption("Built by Sreeni Labs")
 
 
