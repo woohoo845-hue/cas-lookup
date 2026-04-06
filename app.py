@@ -474,7 +474,19 @@ if search and cas_input.strip():
                 if idx > 0:
                     st.divider()
                 cat_rows = [r for r in hyma["rows"] if r["Catalog No"] == cat]
-                st.markdown(f"**[{cat}]** {cat_rows[0]['Name']}  ·  *{cat_rows[0]['Group']}*")
+                hdr_col, btn_col = st.columns([5, 1])
+                with hdr_col:
+                    st.markdown(f"**[{cat}]** {cat_rows[0]['Name']}  ·  *{cat_rows[0]['Group']}*")
+                with btn_col:
+                    st.components.v1.html(f"""
+                        <button onclick="
+                            navigator.clipboard.writeText('{cat}');
+                            window.open('https://hymasynthesis.com/Products', '_blank');
+                        " style="
+                            background:#7B2FBE; color:white; border:none; border-radius:4px;
+                            padding:4px 10px; font-size:12px; cursor:pointer; white-space:nowrap;
+                        ">🔗 {cat}</button>
+                    """, height=32)
                 display_rows = [
                     {
                         "Pack Size":    r["Pack Size"],
@@ -484,15 +496,6 @@ if search and cas_input.strip():
                     for r in cat_rows
                 ]
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
-                st.components.v1.html(f"""
-                    <button onclick="
-                        navigator.clipboard.writeText('{cat}');
-                        window.open('https://hymasynthesis.com/Products', '_blank');
-                    " style="
-                        background:#7B2FBE; color:white; border:none; border-radius:6px;
-                        padding:8px 16px; font-size:14px; cursor:pointer; width:100%;
-                    ">🔗 Open Hyma Products → (copies {cat} to clipboard)</button>
-                """, height=45)
 
 elif search:
     st.warning("Please enter a CAS number.")
