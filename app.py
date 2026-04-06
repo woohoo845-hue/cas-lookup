@@ -474,9 +474,15 @@ if search and cas_input.strip():
                 if idx > 0:
                     st.divider()
                 cat_rows = [r for r in hyma["rows"] if r["Catalog No"] == cat]
+                grp = cat_rows[0]["Group"]
+                is_bio = "biologic" in grp.lower()
+                txt_color = "#cc0000" if is_bio else "inherit"
                 hdr_col, btn_col = st.columns([5, 1])
                 with hdr_col:
-                    st.markdown(f"**[{cat}]** {cat_rows[0]['Name']}  ·  *{cat_rows[0]['Group']}*")
+                    st.markdown(
+                        f'<span style="color:{txt_color}">**[{cat}]** {cat_rows[0]["Name"]}  ·  *{grp}*</span>',
+                        unsafe_allow_html=True,
+                    )
                 with btn_col:
                     st.components.v1.html(f"""
                         <button onclick="
@@ -495,7 +501,11 @@ if search and cas_input.strip():
                     }
                     for r in cat_rows
                 ]
+                if is_bio:
+                    st.markdown('<div style="border:2px solid #cc0000; border-radius:6px; padding:4px;">', unsafe_allow_html=True)
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
+                if is_bio:
+                    st.markdown('</div>', unsafe_allow_html=True)
 
 elif search:
     st.warning("Please enter a CAS number.")
