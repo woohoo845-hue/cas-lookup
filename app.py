@@ -484,11 +484,7 @@ if search and cas_input.strip():
                     for r in cat_rows
                 ]
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
-                link_col, copy_col = st.columns([1, 1])
-                with link_col:
-                    st.link_button("🔗 Open Hyma Products →", f"{_HYMA_BASE}/Products")
-                with copy_col:
-                    st.code(cat, language=None)
+                st.link_button("🔗 Open Hyma Products →", f"{_HYMA_BASE}/Products")
 
 elif search:
     st.warning("Please enter a CAS number.")
