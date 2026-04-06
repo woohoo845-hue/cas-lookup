@@ -477,10 +477,10 @@ if search and cas_input.strip():
                 grp = cat_rows[0]["Group"]
                 is_bio = "biologic" in grp.lower()
                 txt_color = "#cc0000" if is_bio else "inherit"
-                hdr_col, btn_col = st.columns([5, 1])
+                hdr_col, btn_col = st.columns([3, 2])
                 with hdr_col:
                     st.markdown(
-                        f'<span style="color:{txt_color}">**[{cat}]** {cat_rows[0]["Name"]}  ·  *{grp}*</span>',
+                        f'<span style="color:{txt_color}; font-weight:600;">[ {cat} ] {cat_rows[0]["Name"]}  ·  <em>{grp}</em></span>',
                         unsafe_allow_html=True,
                     )
                 with btn_col:
@@ -490,9 +490,10 @@ if search and cas_input.strip():
                             window.open('https://hymasynthesis.com/Products', '_blank');
                         " style="
                             background:#7B2FBE; color:white; border:none; border-radius:6px;
-                            padding:6px 12px; font-size:13px; cursor:pointer; white-space:nowrap; width:100%;
+                            padding:7px 14px; font-size:13px; font-weight:bold;
+                            cursor:pointer; white-space:nowrap; width:100%;
                         ">🔗 View {cat} on Hyma</button>
-                    """, height=38)
+                    """, height=40)
                 display_rows = [
                     {
                         "Pack Size":    r["Pack Size"],
@@ -502,10 +503,22 @@ if search and cas_input.strip():
                     for r in cat_rows
                 ]
                 if is_bio:
-                    st.markdown('<div style="border:2px solid #cc0000; border-radius:6px; padding:4px;">', unsafe_allow_html=True)
-                st.dataframe(display_rows, use_container_width=True, hide_index=True)
-                if is_bio:
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    rows_html = "".join(
+                        f"<tr><td>{r['Pack Size']}</td><td>{r['Price (INR)']}</td><td>{r['Hyd. Stock']}</td></tr>"
+                        for r in display_rows
+                    )
+                    st.markdown(f"""
+                        <table style="width:100%; border-collapse:collapse; color:#cc0000; font-size:14px; margin-top:4px;">
+                          <thead><tr style="border-bottom:2px solid #cc0000;">
+                            <th style="text-align:left; padding:4px 8px;">Pack Size</th>
+                            <th style="text-align:left; padding:4px 8px;">Price (INR)</th>
+                            <th style="text-align:left; padding:4px 8px;">Hyd. Stock</th>
+                          </tr></thead>
+                          <tbody>{rows_html}</tbody>
+                        </table>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.dataframe(display_rows, use_container_width=True, hide_index=True)
 
 elif search:
     st.warning("Please enter a CAS number.")
