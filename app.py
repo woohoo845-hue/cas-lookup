@@ -483,10 +483,10 @@ if search and cas_input.strip():
                             navigator.clipboard.writeText('{cat}');
                             window.open('https://hymasynthesis.com/Products', '_blank');
                         " style="
-                            background:#7B2FBE; color:white; border:none; border-radius:4px;
-                            padding:4px 10px; font-size:12px; cursor:pointer; white-space:nowrap;
-                        ">🔗 {cat}</button>
-                    """, height=32)
+                            background:#7B2FBE; color:white; border:none; border-radius:6px;
+                            padding:6px 12px; font-size:13px; cursor:pointer; white-space:nowrap; width:100%;
+                        ">🔗 View {cat} on Hyma</button>
+                    """, height=38)
                 display_rows = [
                     {
                         "Pack Size":    r["Pack Size"],
