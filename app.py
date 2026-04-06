@@ -378,11 +378,9 @@ def scrape_hyma(cas: str) -> dict:
             try:   total_f = float(qty_total)
             except: total_f = 0.0
 
-            stock_num = int(avail_f) if avail_f > 0 else int(total_f)
-            if avail_f > 0:
+            stock_num = int(max(avail_f, total_f))
+            if stock_num > 0:
                 hyd_stock = f"{stock_num} ✅"
-            elif total_f > 0:
-                hyd_stock = f"{stock_num} 📦"
             else:
                 hyd_stock = "0 ❌"
 
@@ -402,12 +400,13 @@ def scrape_hyma(cas: str) -> dict:
 
 
 # ── UI ─────────────────────────────────────────────────────
-col_input, col_btn = st.columns([4, 1])
-with col_input:
-    cas_input = st.text_input("CAS Number", placeholder="e.g. 1122-91-4",
-                               label_visibility="collapsed")
-with col_btn:
-    search = st.button("🔍 Search", use_container_width=True, type="primary")
+with st.form("search_form"):
+    col_input, col_btn = st.columns([4, 1])
+    with col_input:
+        cas_input = st.text_input("CAS Number", placeholder="e.g. 1122-91-4",
+                                   label_visibility="collapsed")
+    with col_btn:
+        search = st.form_submit_button("🔍 Search", use_container_width=True, type="primary")
 
 if search and cas_input.strip():
     cas = cas_input.strip()
@@ -427,30 +426,26 @@ if search and cas_input.strip():
             for idx, entry in enumerate(bld["entries"]):
                 if idx > 0:
                     st.divider()
-                st.markdown(f"**{entry['name']}**")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("CAS",      entry["cas"])
-                c2.metric("Cat. No.", entry["catalog_no"])
-                c3.metric("Purity",   entry["purity"])
+                st.markdown(
+                    f"**{entry['name']}** &nbsp;·&nbsp; "
+                    f"`{entry['catalog_no']}` &nbsp;·&nbsp; {entry['purity']}",
+                    unsafe_allow_html=True,
+                )
                 if entry.get("lead_time"):
-                    st.caption(f"⏱ Lead time for custom/large sizes: **{entry['lead_time']}**")
+                    st.caption(f"⏱ Lead time: **{entry['lead_time']}**")
                 if entry.get("rows"):
                     display_rows = [
                         {
-                            "Size":          r["Size"],
-                            "Price (INR)":   r["Price (INR)"],
-                            "Hyderabad":     r["Hyderabad"],
-                            "Delhi":         r.get("Delhi", "—"),
-                            "Global":        r.get("Global", "—"),
+                            "Size":        r["Size"],
+                            "Price (INR)": r["Price (INR)"],
+                            "Hyderabad":   r["Hyderabad"],
+                            "Delhi":       r.get("Delhi", "—"),
+                            "Global":      r.get("Global", "—"),
                         }
                         for r in entry["rows"]
                     ]
                     st.dataframe(display_rows, use_container_width=True, hide_index=True)
-                st.link_button(
-                    f"🔗 View on BLD Pharm →",
-                    entry["url"],
-                    use_container_width=True,
-                )
+                st.link_button("🔗 View on BLD Pharm →", entry["url"], use_container_width=True)
 
     # ── Hyma Synthesis ─────────────────────────────────────
     with col_hyma:
@@ -463,22 +458,29 @@ if search and cas_input.strip():
         elif not hyma["found"]:
             st.warning(hyma["message"])
         else:
-            st.markdown(f"**CAS: {hyma['cas']}**")
-            st.caption("Ships from Hyderabad, India · Prices in INR · Stock figures are Hyderabad warehouse")
-
-            # Group by catalog number
+            # Group by catalog number, sort so Speciality Chemicals comes first
             seen_cats = []
             for row in hyma["rows"]:
                 cat = row["Catalog No"]
                 if cat not in seen_cats:
                     seen_cats.append(cat)
 
+            def _group_priority(cat):
+                grp = next((r["Group"] for r in hyma["rows"] if r["Catalog No"] == cat), "")
+                grp_l = grp.lower()
+                if "speciality" in grp_l or "specialty" in grp_l:
+                    return 0
+                if "biologic" in grp_l:
+                    return 2
+                return 1
+
+            seen_cats.sort(key=_group_priority)
+
             for idx, cat in enumerate(seen_cats):
                 if idx > 0:
                     st.divider()
                 cat_rows = [r for r in hyma["rows"] if r["Catalog No"] == cat]
-                label = f"**[{cat}]** {cat_rows[0]['Name']}  ·  {cat_rows[0]['Group']}"
-                st.markdown(label)
+                st.markdown(f"**[{cat}]** {cat_rows[0]['Name']}  ·  *{cat_rows[0]['Group']}*")
                 display_rows = [
                     {
                         "Pack Size":    r["Pack Size"],
@@ -488,21 +490,13 @@ if search and cas_input.strip():
                     for r in cat_rows
                 ]
                 st.dataframe(display_rows, use_container_width=True, hide_index=True)
-                # Hyma's Angular SPA ignores URL query params — we can't
-                # deep-link to a specific product. Provide copyable catalog
-                # number + CAS so the user can paste into Hyma's search box.
                 link_col, copy_col = st.columns([1, 1])
                 with link_col:
-                    st.link_button(
-                        f"🔗 Open Hyma Products →",
-                        f"{_HYMA_BASE}/Products",
-                    )
+                    st.link_button("🔗 Open Hyma Products →", f"{_HYMA_BASE}/Products")
                 with copy_col:
                     st.code(cat, language=None)
-                st.caption(f"💡 Copy **{cat}** or **{cas}** and paste into the search box on Hyma's site.")
 
 elif search:
     st.warning("Please enter a CAS number.")
 
-st.divider()
-st.caption("Data fetched live · BLD prices in INR · Hyma prices in INR excl. GST · Hyma stock = Hyderabad warehouse")
+st.caption("Data fetched live · BLD & Hyma prices in INR · Hyma stock = Hyderabad warehouse")
