@@ -367,6 +367,7 @@ def scrape_hyma(cas: str) -> dict:
         for item in prod_det:
             pack_size  = item.get("PackSize", "").strip()
             if not pack_size: continue
+            if "bulk" in pack_size.lower(): continue
 
             price      = item.get("Price", "").strip() or "Inquiry"
             qty_avail  = item.get("QtyA", "0")   # available to dispatch (Hyderabad)
