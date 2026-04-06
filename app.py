@@ -21,16 +21,6 @@ st.markdown("""
 st.title("🧪 CAS Number Price Lookup")
 st.caption("Live pricing & availability from **BLD Pharm** and **Hyma Synthesis**")
 
-# ── Sidebar: Info ─────────────────────────────────────────
-with st.sidebar:
-    st.header("ℹ️ About")
-    st.caption(
-        "This app fetches live pricing and stock data from "
-        "**BLD Pharm** and **Hyma Synthesis**."
-    )
-    st.divider()
-    st.caption("Built by Sreeni Labs")
-
 
 _BLD_BASE  = "https://www.bldpharm.com"
 _HYMA_BASE = "https://hymasynthesis.com"
