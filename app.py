@@ -432,13 +432,10 @@ if search and cas_input.strip():
                 c3.metric("Purity",   entry["purity"])
                 if entry.get("lead_time"):
                     st.caption(f"⏱ Lead time for custom/large sizes: **{entry['lead_time']}**")
-
-                st.markdown("**Stock by location (Hyderabad · Delhi · Global):**")
-                st.dataframe(entry["rows"], use_container_width=True, hide_index=True)
-                st.caption("💡 Full stock data requires running this app from an Indian IP. See sidebar for details.")
                 st.link_button(
-                    f"🔗 View {entry['catalog_no']} on BLD Pharm →",
+                    f"🔗 View stock & pricing for {entry['catalog_no']} on BLD Pharm →",
                     entry["url"],
+                    use_container_width=True,
                 )
 
     # ── Hyma Synthesis ─────────────────────────────────────
