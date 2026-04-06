@@ -369,20 +369,14 @@ def scrape_hyma(cas: str) -> dict:
             if not pack_size: continue
             if "bulk" in pack_size.lower(): continue
 
-            price      = item.get("Price", "").strip() or "Inquiry"
-            qty_avail  = item.get("QtyA", "0")   # available to dispatch (Hyderabad)
-            qty_total  = item.get("Qty",  "0")   # total Hyderabad warehouse stock
+            price    = item.get("Price", "").strip() or "Inquiry"
+            qty_hyd  = item.get("Qty", "0")   # Qty = HYD(Q) — Hyderabad stock
 
-            try:   avail_f = float(qty_avail)
-            except: avail_f = 0.0
-            try:   total_f = float(qty_total)
-            except: total_f = 0.0
+            try:   hyd_f = float(qty_hyd)
+            except: hyd_f = 0.0
 
-            stock_num = int(max(avail_f, total_f))
-            if stock_num > 0:
-                hyd_stock = f"{stock_num} ✅"
-            else:
-                hyd_stock = "0 ❌"
+            stock_num = int(hyd_f)
+            hyd_stock = f"{stock_num} ✅" if stock_num > 0 else "0 ❌"
 
             all_rows.append({
                 "Catalog No":   catalog_no,
