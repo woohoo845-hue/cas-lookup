@@ -51,7 +51,7 @@ def lookup_cas(session, cas: str) -> dict:
     stock_label = "In Stock" if in_stock else "Inquiry"
 
     price_list = item.get("price_list") or []
-price_parts = []
+    price_parts = []
     for p in price_list:
         size = p.get("pr_size", "")
         newprice = p.get("newprice")
