@@ -425,7 +425,7 @@ def scrape_hyma(cas: str) -> dict:
 
 # ── UI ─────────────────────────────────────────────────────
 with st.form("search_form"):
-    col_input, col_btn = st.columns([4, 1])
+    col_input, col_btn = st.columns([2, 1])
     with col_input:
         cas_input = st.text_input("CAS Number", placeholder="e.g. 1122-91-4",
                                    label_visibility="collapsed")
@@ -479,8 +479,7 @@ if search and cas_input.strip():
                     st.caption(f"⏱ Lead time: **{entry['lead_time']}**")
 
                 if entry.get("_link_only"):
-                    # Pricing not accessible via API — don't show an all-dashes table
-                    st.caption("_Detailed pricing not available via API. Check BLD website for current prices._")
+                    st.caption("_Check BLD website for current prices._")
                 elif entry.get("rows"):
                     display_rows = [
                         {
