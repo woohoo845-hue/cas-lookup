@@ -17,6 +17,7 @@ st.markdown("""
         header {visibility: hidden;}
         [data-testid="stToolbar"] {visibility: hidden;}
         [data-testid="stDecoration"] {visibility: hidden;}
+        [data-testid="stSidebarNav"] {display: none;}
     </style>
 """, unsafe_allow_html=True)
 
