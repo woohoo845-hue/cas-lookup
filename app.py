@@ -4,6 +4,7 @@ import re
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
+from curl_cffi import requests as curl_requests
 
 st.set_page_config(page_title="CAS Price Lookup", page_icon="🧪", layout="wide")
 
@@ -48,13 +49,16 @@ _NAV_HEADERS = {
 
 
 def _build_bld_session():
-    """Build an anonymous requests Session for BLD Pharm."""
-    s = requests.Session()
-    s.headers.update(_BROWSER_HEADERS)
+    """Build a BLD session using curl_cffi to impersonate Chrome's TLS fingerprint.
+    BLD Pharm uses TLS fingerprinting to detect non-browser clients and strips
+    pricing data from the HTML for requests that don't match a real browser's
+    TLS signature. curl_cffi impersonates Chrome exactly at the TLS level.
+    """
+    s = curl_requests.Session(impersonate="chrome124")
     try:
         # Visit homepage first so BLD sets its own geo-IP cookies,
         # then we override them with India/INR AFTER the visit so they stick.
-        s.get(f"{_BLD_BASE}/", headers=_NAV_HEADERS, timeout=15)
+        s.get(f"{_BLD_BASE}/", timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
         s.get(
             f"{_BLD_BASE}/webapi/v1/setcookiebyprivacy?params=e30%3D&_xsrf={xsrf}",
@@ -112,7 +116,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
     found anywhere on the page (status badges, availability text, etc.).
     """
     try:
-        resp = get_bld_session().get(url, headers=_NAV_HEADERS, timeout=20)
+        resp = get_bld_session().get(url, timeout=20)
     except Exception as e:
         return {"error": str(e)}
 
