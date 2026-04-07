@@ -5,6 +5,7 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
 st.set_page_config(page_title="CAS Price Lookup", page_icon="🧪", layout="wide")
 
@@ -436,13 +437,26 @@ with st.form("search_form"):
 
 if search and cas_input.strip():
     cas = cas_input.strip()
+
+    # Run BLD and Hyma concurrently with a hard 45-second timeout on BLD
+    with st.spinner("Searching BLD Pharm & Hyma Synthesis …"):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            bld_future = executor.submit(scrape_bld, cas)
+            hyma_future = executor.submit(scrape_hyma, cas)
+            try:
+                bld = bld_future.result(timeout=45)
+            except (FuturesTimeout, Exception) as e:
+                bld = {"error": f"BLD timed out or failed: {e}", "found": False}
+            try:
+                hyma = hyma_future.result(timeout=45)
+            except (FuturesTimeout, Exception) as e:
+                hyma = {"error": f"Hyma timed out or failed: {e}", "found": False}
+
     col_bld, col_hyma = st.columns(2)
 
     # ── BLD Pharm ──────────────────────────────────────────
     with col_bld:
         st.subheader("🔵 BLD Pharm")
-        with st.spinner("Fetching from bldpharm.com …"):
-            bld = scrape_bld(cas)
 
         # ── Temporary debug info ──
         with st.expander("🔧 BLD Debug"):
@@ -487,8 +501,6 @@ if search and cas_input.strip():
     # ── Hyma Synthesis ─────────────────────────────────────
     with col_hyma:
         st.subheader("🟣 Hyma Synthesis")
-        with st.spinner("Fetching from hymasynthesis.com …"):
-            hyma = scrape_hyma(cas)
 
         if "error" in hyma:
             st.error(f"Error: {hyma['error']}")
