@@ -18,6 +18,8 @@ st.markdown("""
         [data-testid="stToolbar"] {visibility: hidden;}
         [data-testid="stDecoration"] {visibility: hidden;}
         [data-testid="stSidebarNav"] {display: none;}
+        [data-testid="stSidebar"] {display: none;}
+        [data-testid="collapsedControl"] {display: none;}
     </style>
 """, unsafe_allow_html=True)
 
