@@ -1,6 +1,7 @@
 import streamlit as st
 import base64
 import json
+import re
 import concurrent.futures
 from curl_cffi import requests as cffi_requests
 
@@ -38,8 +39,13 @@ def lookup_cas(session, cas: str) -> dict:
         return {"CAS No.": cas, "Product Name": "Not found on BLD", "Cat. No.": "", "Purity": "", "Stock": "", "Prices": ""}
 
     item = results[0]
-    returned_cas = (item.get("p_cas") or "").strip()
-    name = item.get("p_name_en") or item.get("p_name") or ""
+    returned_cas = re.sub(r"<[^>]+>", "", (item.get("p_cas") or "")).strip()
+    name = re.sub(r"<[^>]+>", "", item.get("p_name_en") or item.get("p_name") or "").strip()
+
+    # If BLD returned a result but stripped all product data (anti-bot), show as found-but-limited
+    if not name and not item.get("p_bd"):
+        return {"CAS No.": cas, "Product Name": "Found on BLD (details blocked)", "Cat. No.": "", "Purity": "", "Stock": "Check BLD", "Prices": "—"}
+
     mismatch_flag = "  ⚠️ Possible mismatch" if returned_cas and returned_cas.lower() != cas.lower() else ""
     in_stock = bool(item.get("p_ishasstock"))
     stock_label = "In Stock" if in_stock else "Inquiry"
