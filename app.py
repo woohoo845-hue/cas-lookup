@@ -456,19 +456,22 @@ with st.form("search_form"):
 if search and cas_input.strip():
     cas = cas_input.strip()
 
-    # Run BLD and Hyma concurrently with a hard 45-second timeout on BLD
+    # Run BLD and Hyma concurrently with a hard 45-second timeout on BLD.
+    # NOTE: we don't use `with` because ThreadPoolExecutor.__exit__ calls
+    # shutdown(wait=True), which blocks until hanging threads finish.
     with st.spinner("Searching BLD Pharm & Hyma Synthesis …"):
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            bld_future = executor.submit(scrape_bld, cas)
-            hyma_future = executor.submit(scrape_hyma, cas)
-            try:
-                bld = bld_future.result(timeout=45)
-            except (FuturesTimeout, Exception) as e:
-                bld = {"error": f"BLD timed out or failed: {e}", "found": False}
-            try:
-                hyma = hyma_future.result(timeout=45)
-            except (FuturesTimeout, Exception) as e:
-                hyma = {"error": f"Hyma timed out or failed: {e}", "found": False}
+        executor = ThreadPoolExecutor(max_workers=2)
+        bld_future = executor.submit(scrape_bld, cas)
+        hyma_future = executor.submit(scrape_hyma, cas)
+        try:
+            bld = bld_future.result(timeout=45)
+        except (FuturesTimeout, Exception) as e:
+            bld = {"error": f"BLD timed out or failed: {e}", "found": False}
+        try:
+            hyma = hyma_future.result(timeout=45)
+        except (FuturesTimeout, Exception) as e:
+            hyma = {"error": f"Hyma timed out or failed: {e}", "found": False}
+        executor.shutdown(wait=False, cancel_futures=True)
 
     col_bld, col_hyma = st.columns(2)
 
