@@ -34,6 +34,18 @@ _BROWSER_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# Headers that mimic a real browser document navigation.
+# BLD Pharm's server uses these to decide whether to include the full
+# stock/pricing table in the HTML (server-side rendered, not loaded via XHR).
+_NAV_HEADERS = {
+    **_BROWSER_HEADERS,
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
 
 def _build_bld_session():
     """Build an anonymous requests Session for BLD Pharm."""
@@ -42,7 +54,7 @@ def _build_bld_session():
     try:
         # Visit homepage first so BLD sets its own geo-IP cookies,
         # then we override them with India/INR AFTER the visit so they stick.
-        s.get(f"{_BLD_BASE}/", timeout=15)
+        s.get(f"{_BLD_BASE}/", headers=_NAV_HEADERS, timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
         s.get(
             f"{_BLD_BASE}/webapi/v1/setcookiebyprivacy?params=e30%3D&_xsrf={xsrf}",
@@ -100,7 +112,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
     found anywhere on the page (status badges, availability text, etc.).
     """
     try:
-        resp = get_bld_session().get(url, timeout=20)
+        resp = get_bld_session().get(url, headers=_NAV_HEADERS, timeout=20)
     except Exception as e:
         return {"error": str(e)}
 
