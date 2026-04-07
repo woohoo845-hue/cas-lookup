@@ -56,8 +56,7 @@ def _build_bld_session():
     """
     s = curl_requests.Session(impersonate="chrome124")
     try:
-        # Visit homepage first so BLD sets its own geo-IP cookies,
-        # then we override them with India/INR AFTER the visit so they stick.
+        # Visit homepage first so BLD sets its own cookies.
         s.get(f"{_BLD_BASE}/", timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
         s.get(
@@ -68,8 +67,10 @@ def _build_bld_session():
         pass
     # Override country/currency AFTER homepage so BLD's geo-IP detection
     # cannot overwrite our preference on subsequent API calls.
-    s.cookies.set("bld_country", "India|INR", domain="www.bldpharm.com")
-    s.cookies.set("bld_unit",    "INR",        domain="www.bldpharm.com")
+    # NOTE: curl_cffi's cookies.set(domain=...) doesn't reliably send cookies.
+    # We set them without the domain kwarg so they attach to every request.
+    s.cookies.set("bld_country", "India|INR")
+    s.cookies.set("bld_unit",    "INR")
     return s
 
 
@@ -134,7 +135,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
         "has_pro_table": "pro_table" in _raw,
         "has_2153": "2153" in _raw,
         "status": resp.status_code,
-        "cookies_sent": dict(resp.request.headers),
+        "cookies_sent": dict(get_bld_session().cookies),
     }
     import sys
     print(f"[BLD DEBUG] {url}: {_debug}", file=sys.stderr, flush=True)
