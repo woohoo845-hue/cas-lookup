@@ -51,6 +51,9 @@ def lookup_cas(session, cas: str) -> dict:
     stock_label = "In Stock" if in_stock else "Inquiry"
 
     price_list = item.get("price_list") or []
+    # Dump raw price_list for debugging (first 2 entries)
+    _debug_prices = json.dumps(price_list[:2], indent=2, default=str) if price_list else "[]"
+
     price_parts = []
     for p in price_list:
         size = p.get("pr_size", "")
@@ -70,6 +73,7 @@ def lookup_cas(session, cas: str) -> dict:
         "Product Name": name + mismatch_flag,
         "Cat. No.": item.get("p_bd", ""),
         "Purity": item.get("p_purity", ""),
+        "_debug_prices": _debug_prices,
         "Stock": stock_label,
         "Prices": prices_str,
         "_in_stock": in_stock,
@@ -121,6 +125,14 @@ if run_btn:
             )
             csv_bytes = df.to_csv(index=False).encode("utf-8-sig")
             st.download_button("⬇️ Export CSV", data=csv_bytes, file_name="bld_prices.csv", mime="text/csv")
+
+            # Temporary debug: show raw price_list JSON
+            with st.expander("🔍 Debug: Raw price_list from API"):
+                for row in rows:
+                    cas_no = row.get("CAS No.", "?")
+                    debug = row.get("_debug_prices", "N/A")
+                    st.text(f"--- {cas_no} ---")
+                    st.code(debug, language="json")
 
 st.divider()
 st.caption("Prices in INR · Sourced live from bldpharm.com")
