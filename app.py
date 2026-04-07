@@ -39,6 +39,8 @@ def _build_bld_session():
     """Build an anonymous requests Session for BLD Pharm."""
     s = requests.Session()
     s.headers.update(_BROWSER_HEADERS)
+    s.cookies.set("bld_country", "India|INR", domain="www.bldpharm.com")
+    s.cookies.set("bld_unit", "INR", domain="www.bldpharm.com")
     try:
         s.get(f"{_BLD_BASE}/", timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
