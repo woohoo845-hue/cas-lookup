@@ -142,24 +142,8 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
     if resp.status_code != 200:
         return {"error": f"BLD Pharm returned HTTP {resp.status_code}"}
 
-    # ── DEBUG: log what we received from BLD ──
     _raw = resp.text
-    _debug = {
-        "html_len": len(_raw),
-        "has_INR": "INR" in _raw,
-        "has_tr_stock": "tr_stock" in _raw,
-        "has_pro_table": "pro_table" in _raw,
-        "has_2153": "2153" in _raw,
-        "status": resp.status_code,
-        "session_cookies": {k: v for k, v in get_bld_session().cookies.items()},
-    }
-    import sys
-    print(f"[BLD DEBUG] {url}: {_debug}", file=sys.stderr, flush=True)
-
     soup = BeautifulSoup(_raw, "html.parser")
-
-    # Store debug info for UI display
-    _debug_info = _debug
 
     parts  = (soup.title.string or "").split("|")
     cas_no = _strip_html(parts[0].strip()) if parts else cas
@@ -197,7 +181,6 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
             "cas": cas_no, "name": name,
             "catalog_no": cat_no, "purity": purity,
             "lead_time": lead_time, "rows": rows,
-            "_debug_info": _debug_info,
         }
 
     # ── Fallback: look for stock/availability text signals on the page ──
@@ -234,7 +217,6 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
         "cas": cas_no, "name": name,
         "catalog_no": cat_no, "purity": purity,
         "lead_time": lead_time, "rows": rows,
-        "_debug_info": _debug_info,
     }
 
 
@@ -285,7 +267,6 @@ def scrape_bld(cas: str) -> dict:
         return {"found": False, "message": f"CAS **{cas}** not found on BLD Pharm."}
 
     entries = []
-    _first_debug = {}
     for product in results:
         bd    = _strip_html(product.get("p_bd", ""))
         s_url = _strip_html(product.get("s_url", f"{cas}.html"))
@@ -301,8 +282,6 @@ def scrape_bld(cas: str) -> dict:
         # _scrape_bld_product always returns partial data (name, cat_no, purity)
         # even if the stock table isn't available (geo-IP restriction).
         html_data = _scrape_bld_product(cas, url)
-        if not _first_debug:
-            _first_debug = html_data.get("_debug_info", {})
         if html_data.get("found") and html_data.get("rows"):
             entries.append(html_data)
             continue
@@ -375,8 +354,8 @@ def scrape_bld(cas: str) -> dict:
         })
 
     if not entries:
-        return {"found": False, "message": f"CAS **{cas}** found but no pricing data available on BLD Pharm.", "_debug": _first_debug}
-    return {"found": True, "cas": cas, "entries": entries, "_debug": _first_debug}
+        return {"found": False, "message": f"CAS **{cas}** found but no pricing data available on BLD Pharm."}
+    return {"found": True, "cas": cas, "entries": entries}
 
 
 # ── Hyma Synthesis ─────────────────────────────────────────
@@ -480,9 +459,6 @@ if search and cas_input.strip():
         st.subheader("🔵 BLD Pharm")
 
         # ── Temporary debug info ──
-        with st.expander("🔧 BLD Debug"):
-            st.json(bld.get("_debug", {}))
-
         if "error" in bld:
             st.error(f"Error: {bld['error']}")
         elif not bld["found"]:
