@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 
-st.set_page_config(page_title="CAS Price Lookup", page_icon="🧪", layout="wide")
+st.set_page_config(page_title="CAS Price Lookup", page_icon="🧪", layout="wide", initial_sidebar_state="collapsed")
 
 # Hide Streamlit default UI chrome (menu, footer, header)
 st.markdown("""
