@@ -484,7 +484,7 @@ if search and cas_input.strip():
                     st.caption(f"⏱ Lead time: **{entry['lead_time']}**")
 
                 if entry.get("_link_only"):
-                    st.caption("_Check BLD website for current prices._")
+                    st.caption("_Available on BLD — check the link for price._")
                 elif entry.get("rows"):
                     display_rows = [
                         {
