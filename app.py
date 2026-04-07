@@ -48,6 +48,8 @@ _NAV_HEADERS = {
 }
 
 
+_BLD_INR_COOKIES = {"bld_country": "India|INR", "bld_unit": "INR"}
+
 def _build_bld_session():
     """Build a BLD session using curl_cffi to impersonate Chrome's TLS fingerprint.
     BLD Pharm uses TLS fingerprinting to detect non-browser clients and strips
@@ -65,12 +67,6 @@ def _build_bld_session():
         )
     except Exception:
         pass
-    # Override country/currency AFTER homepage so BLD's geo-IP detection
-    # cannot overwrite our preference on subsequent API calls.
-    # NOTE: curl_cffi's cookies.set(domain=...) doesn't reliably send cookies.
-    # We set them without the domain kwarg so they attach to every request.
-    s.cookies.set("bld_country", "India|INR")
-    s.cookies.set("bld_unit",    "INR")
     return s
 
 
@@ -117,7 +113,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
     found anywhere on the page (status badges, availability text, etc.).
     """
     try:
-        resp = get_bld_session().get(url, timeout=20)
+        resp = get_bld_session().get(url, cookies=_BLD_INR_COOKIES, timeout=20)
     except Exception as e:
         return {"error": str(e)}
 
@@ -135,7 +131,7 @@ def _scrape_bld_product(cas: str, url: str) -> dict:
         "has_pro_table": "pro_table" in _raw,
         "has_2153": "2153" in _raw,
         "status": resp.status_code,
-        "cookies_sent": dict(get_bld_session().cookies),
+        "cookies_sent": str(resp.cookies) if hasattr(resp, 'cookies') else "N/A",
     }
     import sys
     print(f"[BLD DEBUG] {url}: {_debug}", file=sys.stderr, flush=True)
@@ -246,7 +242,8 @@ def scrape_bld(cas: str) -> dict:
         ).decode()
         try:
             r = session.get(
-                f"{_BLD_API}?params={params_b64}&_xsrf={xsrf}", timeout=20
+                f"{_BLD_API}?params={params_b64}&_xsrf={xsrf}",
+                cookies=_BLD_INR_COOKIES, timeout=20,
             )
             r.raise_for_status()
             api_data = r.json()
