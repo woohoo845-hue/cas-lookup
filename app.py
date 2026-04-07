@@ -72,18 +72,36 @@ def _build_bld_session():
     return s
 
 
+import threading
+_bld_session_lock = threading.Lock()
+_bld_session_cache = None
+
 def get_bld_session():
-    """Returns a cached BLD session."""
-    if "_bld_session" not in st.session_state:
-        st.session_state["_bld_session"] = _build_bld_session()
-    return st.session_state["_bld_session"]
+    """Returns a cached BLD session (thread-safe, no st.session_state)."""
+    global _bld_session_cache
+    if _bld_session_cache is None:
+        with _bld_session_lock:
+            if _bld_session_cache is None:
+                _bld_session_cache = _build_bld_session()
+    return _bld_session_cache
 
 
-@st.cache_resource
 def get_hyma_session():
+    """Returns a cached Hyma session."""
     s = requests.Session()
     s.headers.update(_BROWSER_HEADERS)
     return s
+
+_hyma_session_cache = None
+_hyma_session_lock = threading.Lock()
+
+def _get_hyma_session():
+    global _hyma_session_cache
+    if _hyma_session_cache is None:
+        with _hyma_session_lock:
+            if _hyma_session_cache is None:
+                _hyma_session_cache = get_hyma_session()
+    return _hyma_session_cache
 
 
 # keep a thin alias so non-BLD code still compiles if anything references it
@@ -367,7 +385,7 @@ def scrape_bld(cas: str) -> dict:
 
 def scrape_hyma(cas: str) -> dict:
     try:
-        r1 = get_hyma_session().get(
+        r1 = _get_hyma_session().get(
             f"{_HYMA_BASE}/webservices/api/Values/GetChemicalNames",
             params={"Query": cas}, timeout=15,
         )
@@ -388,7 +406,7 @@ def scrape_hyma(cas: str) -> dict:
         group      = parts[3] if len(parts) > 3 else ""
 
         try:
-            r2 = get_hyma_session().get(
+            r2 = _get_hyma_session().get(
                 f"{_HYMA_BASE}/webservices/api/Values/GetWebStockItemMstBasedOnId",
                 params={"ItemCode": catalog_no}, timeout=15,
             )
