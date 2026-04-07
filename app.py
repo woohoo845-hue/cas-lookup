@@ -39,9 +39,9 @@ def _build_bld_session():
     """Build an anonymous requests Session for BLD Pharm."""
     s = requests.Session()
     s.headers.update(_BROWSER_HEADERS)
-    s.cookies.set("bld_country", "India|INR", domain="www.bldpharm.com")
-    s.cookies.set("bld_unit", "INR", domain="www.bldpharm.com")
     try:
+        # Visit homepage first so BLD sets its own geo-IP cookies,
+        # then we override them with India/INR AFTER the visit so they stick.
         s.get(f"{_BLD_BASE}/", timeout=15)
         xsrf = s.cookies.get("_xsrf", "")
         s.get(
@@ -50,6 +50,10 @@ def _build_bld_session():
         )
     except Exception:
         pass
+    # Override country/currency AFTER homepage so BLD's geo-IP detection
+    # cannot overwrite our preference on subsequent API calls.
+    s.cookies.set("bld_country", "India|INR", domain="www.bldpharm.com")
+    s.cookies.set("bld_unit",    "INR",        domain="www.bldpharm.com")
     return s
 
 
@@ -412,14 +416,21 @@ if search and cas_input.strip():
             for idx, entry in enumerate(bld["entries"]):
                 if idx > 0:
                     st.divider()
-                st.markdown(
-                    f"**{entry['name']}** &nbsp;·&nbsp; "
-                    f"`{entry['catalog_no']}` &nbsp;·&nbsp; {entry['purity']}",
-                    unsafe_allow_html=True,
-                )
+                # Build header — only include non-dash fields
+                hdr_parts = [f"**{entry['name']}**"]
+                if entry.get("catalog_no") and entry["catalog_no"] != "—":
+                    hdr_parts.append(f"`{entry['catalog_no']}`")
+                if entry.get("purity") and entry["purity"] != "—":
+                    hdr_parts.append(entry["purity"])
+                st.markdown(" &nbsp;·&nbsp; ".join(hdr_parts), unsafe_allow_html=True)
+
                 if entry.get("lead_time"):
                     st.caption(f"⏱ Lead time: **{entry['lead_time']}**")
-                if entry.get("rows"):
+
+                if entry.get("_link_only"):
+                    # Pricing not accessible via API — don't show an all-dashes table
+                    st.caption("_Detailed pricing not available via API. Check BLD website for current prices._")
+                elif entry.get("rows"):
                     display_rows = [
                         {
                             "Size":        r["Size"],
@@ -472,7 +483,11 @@ if search and cas_input.strip():
                 hdr_col, btn_col = st.columns([3, 2])
                 with hdr_col:
                     st.markdown(
-                        f'<span style="color:{txt_color}; font-weight:600;">[ {cat} ] {cat_rows[0]["Name"]}  ·  <em>{grp}</em></span>',
+                        f'<span style="color:{txt_color}; font-weight:600;">'
+                        f'<span style="background:{txt_color if is_bio else "#e8e8e8"}; color:{"white" if is_bio else "#333"}; '
+                        f'border-radius:4px; padding:1px 6px; font-size:12px; font-weight:700; margin-right:6px;">{cat}</span>'
+                        f'{cat_rows[0]["Name"]}</span>'
+                        f'<br><span style="color:#888; font-size:12px; font-style:italic;">{grp}</span>',
                         unsafe_allow_html=True,
                     )
                 with btn_col:
@@ -515,4 +530,4 @@ if search and cas_input.strip():
 elif search:
     st.warning("Please enter a CAS number.")
 
-st.caption("Data fetched live · BLD & Hyma prices in INR · Hyma stock = Hyderabad warehouse")
+st.caption("Data fetched live · BLD & Hyma prices in INR · Hyma stock = Hyderabad warehouse · POR = Price on Request")
