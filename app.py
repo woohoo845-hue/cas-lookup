@@ -427,13 +427,15 @@ def scrape_hyma(cas: str) -> dict:
 
 
 # ── UI ─────────────────────────────────────────────────────
-with st.form("search_form"):
-    col_input, col_btn = st.columns([2, 1])
-    with col_input:
-        cas_input = st.text_input("CAS Number", placeholder="e.g. 1122-91-4",
-                                   label_visibility="collapsed")
-    with col_btn:
-        search = st.form_submit_button("🔍 Search", use_container_width=True, type="primary")
+_, col_center, _ = st.columns([1, 2, 1])
+with col_center:
+    with st.form("search_form"):
+        col_input, col_btn = st.columns([3, 1])
+        with col_input:
+            cas_input = st.text_input("CAS Number", placeholder="e.g. 1122-91-4",
+                                       label_visibility="collapsed")
+        with col_btn:
+            search = st.form_submit_button("🔍 Search", use_container_width=True, type="primary")
 
 if search and cas_input.strip():
     cas = cas_input.strip()
