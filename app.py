@@ -20,6 +20,10 @@ st.markdown("""
         [data-testid="stSidebarNav"] {display: none;}
         [data-testid="stSidebar"] {display: none;}
         [data-testid="collapsedControl"] {display: none;}
+        [data-testid="manage-app-button"] {display: none;}
+        [data-testid="manage-app-button"] {display: none;}
+        .stAppDeployButton {display: none;}
+        #stDecoration {display: none;}
     </style>
 """, unsafe_allow_html=True)
 
