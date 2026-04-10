@@ -426,7 +426,7 @@ def scrape_hyma(cas: str) -> dict:
                 "Name":         item_name,
                 "Group":        group,
                 "Pack Size":    pack_size,
-                "Price (INR)":  price,
+                "Price (INR) 40% disc.":  price,
                 "Hyd. Stock":   hyd_stock,
             })
 
@@ -567,21 +567,21 @@ if search and cas_input.strip():
                 display_rows = [
                     {
                         "Pack Size":    r["Pack Size"],
-                        "Price (INR)":  r["Price (INR)"],
+                        "Price (INR) 40% disc.":  r["Price (INR) 40% disc."],
                         "Hyd. Stock":   r["Hyd. Stock"],
                     }
                     for r in cat_rows
                 ]
                 if is_bio:
                     rows_html = "".join(
-                        f"<tr><td>{r['Pack Size']}</td><td>{r['Price (INR)']}</td><td>{r['Hyd. Stock']}</td></tr>"
+                        f"<tr><td>{r['Pack Size']}</td><td>{r['Price (INR) 40% disc.']}</td><td>{r['Hyd. Stock']}</td></tr>"
                         for r in display_rows
                     )
                     st.markdown(f"""
                         <table style="width:100%; border-collapse:collapse; color:#cc0000; font-size:14px; margin-top:4px;">
                           <thead><tr style="border-bottom:2px solid #cc0000;">
                             <th style="text-align:left; padding:4px 8px;">Pack Size</th>
-                            <th style="text-align:left; padding:4px 8px;">Price (INR)</th>
+                            <th style="text-align:left; padding:4px 8px;">Price (INR) 40% disc.</th>
                             <th style="text-align:left; padding:4px 8px;">Hyd. Stock</th>
                           </tr></thead>
                           <tbody>{rows_html}</tbody>
