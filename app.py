@@ -406,7 +406,13 @@ def scrape_hyma(cas: str) -> dict:
             if not pack_size: continue
             if "bulk" in pack_size.lower(): continue
 
-            price    = item.get("Price", "").strip() or "Inquiry"
+            raw_price = item.get("Price", "").strip() or "Inquiry"
+            # Apply 40% discount
+            try:
+                price_val = float(str(raw_price).replace(",", "").replace("INR", "").strip())
+                price = f"INR {price_val * 0.6:,.0f}"
+            except (ValueError, TypeError):
+                price = raw_price
             qty_hyd  = item.get("Qty", "0")   # Qty = HYD(Q) — Hyderabad stock
 
             try:   hyd_f = float(qty_hyd)
@@ -587,4 +593,4 @@ if search and cas_input.strip():
 elif search:
     st.warning("Please enter a CAS number.")
 
-st.caption("Data fetched live · BLD & Hyma prices in INR · Hyma stock = Hyderabad warehouse · POR = Price on Request")
+st.caption("Data fetched live · BLD & Hyma prices in INR · Hyma stock = Hyderabad warehouse · POR = Price on Request · Hyma prices reflect 40% discount already applied")
